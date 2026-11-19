@@ -1,0 +1,22 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Canvas {
+  id        String   @id @default(uuid())
+  shareId   String   @unique
+  title     String   @default("Untitled Canvas - Drawly")
+  elements  Json     // Array elemen bentuk, koordinat, dan teks Rough.js
+  appState  Json?    // Zoom level, pan scroll, background grid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([shareId])
+  @@map("canvases")
+}
+
