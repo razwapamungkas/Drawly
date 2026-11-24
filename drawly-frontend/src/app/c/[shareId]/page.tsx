@@ -7,10 +7,12 @@ import { Header } from '@/components/ui/Header';
 import { FloatingDock } from '@/components/ui/FloatingDock';
 import { PropertiesPanel } from '@/components/ui/PropertiesPanel';
 import { ShareModal } from '@/components/ui/ShareModal';
-import { CanvasElement, ToolType } from '@/types/canvas';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { CanvasElement, ToolType, Point, FillStyle, StrokeStyle } from '@/types/canvas';
 import { exportToPng, exportToSvg, exportToJson } from '@/lib/canvas/export';
 import { fetchCanvasByShareId, saveCanvasToCloud, updateCanvasInCloud } from '@/lib/api';
 import { generateRoughElement } from '@/lib/canvas/element';
+import { useCanvasHistory } from '@/hooks/useCanvasHistory';
 import { Sparkles, ArrowLeft, AlertCircle } from 'lucide-react';
 
 interface SharedCanvasPageProps {
@@ -25,14 +27,29 @@ export default function SharedCanvasPage({ params }: SharedCanvasPageProps) {
   const [tool, setTool] = useState<ToolType>('select');
   const [strokeColor, setStrokeColor] = useState<string>('#1e293b');
   const [fillColor, setFillColor] = useState<string>('transparent');
+  const [fillStyle, setFillStyle] = useState<FillStyle>('solid');
+  const [strokeStyle, setStrokeStyle] = useState<StrokeStyle>('solid');
   const [strokeWidth, setStrokeWidth] = useState<number>(2);
   const [roughness, setRoughness] = useState<number>(1.2);
+  const [opacity, setOpacity] = useState<number>(100);
   const [title, setTitle] = useState<string>('Memuat...');
 
-  const [elements, setElements] = useState<CanvasElement[]>([]);
+  // Pan & Zoom
+  const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState<number>(1);
+
+  // History & Elements
+  const {
+    elements,
+    recordSnapshot,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    resetHistory,
+  } = useCanvasHistory([]);
+
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
-  const [canUndo, setCanUndo] = useState(false);
-  const [canRedo, setCanRedo] = useState(false);
 
   // Loading & Error State
   const [isLoading, setIsLoading] = useState(true);
@@ -42,6 +59,9 @@ export default function SharedCanvasPage({ params }: SharedCanvasPageProps) {
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
+
+  // Clear Dialog State
+  const [isClearDialogOpen, setIsClearDialogOpen] = useState(false);
 
   // Load Canvas from Backend API
   useEffect(() => {
@@ -61,7 +81,10 @@ export default function SharedCanvasPage({ params }: SharedCanvasPageProps) {
             ...el,
             roughElement: generateRoughElement(el),
           }));
-          setElements(hydrated);
+          resetHistory(hydrated);
+
+          if (data.appState?.pan) setPan(data.appState.pan);
+          if (data.appState?.zoom) setZoom(data.appState.zoom);
         } else {
           throw new Error('Data canvas tidak ditemukan');
         }
@@ -76,7 +99,7 @@ export default function SharedCanvasPage({ params }: SharedCanvasPageProps) {
     }
 
     loadCanvas();
-  }, [shareId]);
+  }, [shareId, resetHistory]);
 
   // Selected element memo
   const selectedElement = useMemo(
@@ -84,40 +107,47 @@ export default function SharedCanvasPage({ params }: SharedCanvasPageProps) {
     [elements, selectedElementId],
   );
 
-  const handleUpdateSelectedElement = useCallback(
+  const handleUpdateElement = useCallback(
     (updatedProps: Partial<CanvasElement>) => {
-      if (!selectedElementId) return;
-
-      setElements((prev) =>
-        prev.map((el) => {
-          if (el.id !== selectedElementId) return el;
-          const updated = { ...el, ...updatedProps };
-          updated.roughElement = generateRoughElement(updated);
-          return updated;
-        }),
-      );
-
       if (updatedProps.stroke) setStrokeColor(updatedProps.stroke);
       if (updatedProps.fill) setFillColor(updatedProps.fill);
+      if (updatedProps.fillStyle) setFillStyle(updatedProps.fillStyle);
+      if (updatedProps.strokeStyle) setStrokeStyle(updatedProps.strokeStyle);
       if (updatedProps.strokeWidth) setStrokeWidth(updatedProps.strokeWidth);
       if (updatedProps.roughness !== undefined) setRoughness(updatedProps.roughness);
+      if (updatedProps.opacity !== undefined) setOpacity(updatedProps.opacity);
+
+      if (!selectedElementId) return;
+
+      const nextElements = elements.map((el) => {
+        if (el.id !== selectedElementId) return el;
+        const updated = { ...el, ...updatedProps };
+        updated.roughElement = generateRoughElement(updated);
+        return updated;
+      });
+
+      recordSnapshot(nextElements);
     },
-    [selectedElementId],
+    [selectedElementId, elements, recordSnapshot],
   );
 
   const handleDeleteSelectedElement = useCallback(() => {
     if (!selectedElementId) return;
-    setElements((prev) => prev.filter((el) => el.id !== selectedElementId));
+    const nextElements = elements.filter((el) => el.id !== selectedElementId);
+    recordSnapshot(nextElements);
     setSelectedElementId(null);
-  }, [selectedElementId]);
+  }, [selectedElementId, elements, recordSnapshot]);
 
   const handleClearCanvas = useCallback(() => {
     if (elements.length === 0) return;
-    if (window.confirm('Apakah Anda yakin ingin mengosongkan kanvas ini?')) {
-      setElements([]);
-      setSelectedElementId(null);
-    }
+    setIsClearDialogOpen(true);
   }, [elements.length]);
+
+  const handleConfirmClearCanvas = useCallback(() => {
+    recordSnapshot([]);
+    setSelectedElementId(null);
+    setIsClearDialogOpen(false);
+  }, [recordSnapshot]);
 
   const handleShare = async () => {
     setIsShareModalOpen(true);
@@ -125,17 +155,19 @@ export default function SharedCanvasPage({ params }: SharedCanvasPageProps) {
     setShareError(null);
 
     try {
-      // Update data di server jika ada perubahan
+      const cleanElements = elements.map(({ roughElement, ...rest }) => rest);
       await updateCanvasInCloud(shareId, {
         title,
-        elements,
+        elements: cleanElements as CanvasElement[],
+        appState: { pan, zoom },
       });
     } catch {
-      // Jika update gagal (misal canvas baru), buat baru
       try {
+        const cleanElements = elements.map(({ roughElement, ...rest }) => rest);
         await saveCanvasToCloud({
           title,
-          elements,
+          elements: cleanElements as CanvasElement[],
+          appState: { pan, zoom },
         });
       } catch (err: any) {
         setShareError(err?.message || 'Gagal menyimpan perubahan kanvas');
@@ -205,8 +237,16 @@ export default function SharedCanvasPage({ params }: SharedCanvasPageProps) {
 
       <PropertiesPanel
         selectedElement={selectedElement}
-        onUpdateElement={handleUpdateSelectedElement}
+        onUpdateElement={handleUpdateElement}
         onDeleteElement={handleDeleteSelectedElement}
+        defaultStrokeColor={strokeColor}
+        defaultFillColor={fillColor}
+        defaultFillStyle={fillStyle}
+        defaultStrokeStyle={strokeStyle}
+        defaultStrokeWidth={strokeWidth}
+        defaultRoughness={roughness}
+        defaultOpacity={opacity}
+        activeTool={tool}
       />
 
       <DrawlyCanvas
@@ -214,17 +254,22 @@ export default function SharedCanvasPage({ params }: SharedCanvasPageProps) {
         setTool={setTool}
         strokeColor={strokeColor}
         fillColor={fillColor}
+        fillStyle={fillStyle}
+        strokeStyle={strokeStyle}
         strokeWidth={strokeWidth}
         roughness={roughness}
+        opacity={opacity}
         title={title}
         selectedElementId={selectedElementId}
         setSelectedElementId={setSelectedElementId}
-        onElementsChange={setElements}
-        initialElements={elements}
-        onUndoRedoAvailable={(undoAvailable, redoAvailable) => {
-          setCanUndo(undoAvailable);
-          setCanRedo(redoAvailable);
-        }}
+        elements={elements}
+        onRecordSnapshot={recordSnapshot}
+        onUndo={undo}
+        onRedo={redo}
+        pan={pan}
+        setPan={setPan}
+        zoom={zoom}
+        setZoom={setZoom}
       />
 
       <FloatingDock
@@ -232,26 +277,27 @@ export default function SharedCanvasPage({ params }: SharedCanvasPageProps) {
         setTool={setTool}
         canUndo={canUndo}
         canRedo={canRedo}
-        onUndo={() => {
-          window.dispatchEvent(
-            new KeyboardEvent('keydown', { key: 'z', ctrlKey: true }),
-          );
-        }}
-        onRedo={() => {
-          window.dispatchEvent(
-            new KeyboardEvent('keydown', { key: 'y', ctrlKey: true }),
-          );
-        }}
+        onUndo={undo}
+        onRedo={redo}
       />
 
       <ShareModal
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}
         shareId={shareId}
-        isLoading={isSharing}
         error={shareError}
+      />
+
+      <ConfirmDialog
+        isOpen={isClearDialogOpen}
+        onClose={() => setIsClearDialogOpen(false)}
+        onConfirm={handleConfirmClearCanvas}
+        title="Kosongkan Kanvas?"
+        description="Semua coretan dan elemen di kanvas publik ini akan dihapus. Tindakan ini tidak dapat dibatalkan."
+        confirmLabel="Kosongkan Kanvas"
+        cancelLabel="Batal"
+        variant="danger"
       />
     </main>
   );
 }
-

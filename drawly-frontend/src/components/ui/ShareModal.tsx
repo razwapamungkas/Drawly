@@ -7,7 +7,7 @@ interface ShareModalProps {
   isOpen: boolean;
   onClose: () => void;
   shareId: string | null;
-  isLoading: boolean;
+  isLoading?: boolean;
   error?: string | null;
 }
 
@@ -15,7 +15,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   isOpen,
   onClose,
   shareId,
-  isLoading,
+  isLoading = false,
   error,
 }) => {
   const [copied, setCopied] = useState(false);

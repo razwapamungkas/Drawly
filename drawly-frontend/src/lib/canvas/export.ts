@@ -68,19 +68,33 @@ export function exportToPng(
 
   // Render elemen
   for (const element of elements) {
+    ctx.save();
+    ctx.globalAlpha = (element.opacity ?? 100) / 100;
+    ctx.setLineDash([]);
+
     if (element.type === 'text') {
       if (element.text) {
-        ctx.save();
-        ctx.font = `${element.fontSize || 22}px Caveat, cursive, sans-serif`;
+        const fontSize = element.fontSize || 24;
+        ctx.font = `${fontSize}px Caveat, cursive, sans-serif`;
         ctx.fillStyle = element.stroke || '#1e293b';
         ctx.textBaseline = 'top';
 
+        const b = getElementBounds(element);
+        const align = element.textAlign || 'left';
+        ctx.textAlign = align;
+
+        let targetX = b.minX;
+        if (align === 'center') {
+          targetX = b.minX + b.width / 2;
+        } else if (align === 'right') {
+          targetX = b.maxX;
+        }
+
         const lines = element.text.split('\n');
-        const lineHeight = (element.fontSize || 22) * 1.35;
+        const lineHeight = fontSize * 1.35;
         lines.forEach((line, index) => {
-          ctx.fillText(line, element.x1, element.y1 + index * lineHeight);
+          ctx.fillText(line, targetX, b.minY + index * lineHeight);
         });
-        ctx.restore();
       }
     } else if (element.roughElement) {
       if (Array.isArray(element.roughElement)) {
@@ -89,6 +103,7 @@ export function exportToPng(
         rc.draw(element.roughElement);
       }
     }
+    ctx.restore();
   }
 
   // Download Trigger
@@ -161,28 +176,52 @@ export function exportToSvg(
   const rc = rough.svg(svg);
 
   for (const element of elements) {
+    const elGroup = document.createElementNS(svgNS, 'g');
+    if (element.opacity !== undefined && element.opacity < 100) {
+      elGroup.setAttribute('opacity', `${element.opacity / 100}`);
+    }
+
     if (element.type === 'text') {
       if (element.text) {
-        const textNode = document.createElementNS(svgNS, 'text');
-        textNode.setAttribute('x', `${element.x1}`);
-        textNode.setAttribute('y', `${element.y1 + (element.fontSize || 22)}`);
-        textNode.setAttribute('font-family', 'Caveat, cursive, sans-serif');
-        textNode.setAttribute('font-size', `${element.fontSize || 22}px`);
-        textNode.setAttribute('fill', element.stroke || '#1e293b');
-        textNode.textContent = element.text;
-        g.appendChild(textNode);
+        const b = getElementBounds(element);
+        const align = element.textAlign || 'left';
+        let targetX = b.minX;
+        let textAnchor = 'start';
+        if (align === 'center') {
+          targetX = b.minX + b.width / 2;
+          textAnchor = 'middle';
+        } else if (align === 'right') {
+          targetX = b.maxX;
+          textAnchor = 'end';
+        }
+
+        const fontSize = element.fontSize || 24;
+        const lineHeight = fontSize * 1.35;
+        const lines = element.text.split('\n');
+        lines.forEach((line, index) => {
+          const textNode = document.createElementNS(svgNS, 'text');
+          textNode.setAttribute('x', `${targetX}`);
+          textNode.setAttribute('y', `${b.minY + (index + 0.85) * lineHeight}`);
+          textNode.setAttribute('font-family', 'Caveat, cursive, sans-serif');
+          textNode.setAttribute('font-size', `${fontSize}px`);
+          textNode.setAttribute('fill', element.stroke || '#1e293b');
+          textNode.setAttribute('text-anchor', textAnchor);
+          textNode.textContent = line;
+          elGroup.appendChild(textNode);
+        });
       }
     } else if (element.roughElement) {
       if (Array.isArray(element.roughElement)) {
         element.roughElement.forEach((drawable) => {
           const node = rc.draw(drawable);
-          g.appendChild(node);
+          elGroup.appendChild(node);
         });
       } else {
         const node = rc.draw(element.roughElement);
-        g.appendChild(node);
+        elGroup.appendChild(node);
       }
     }
+    g.appendChild(elGroup);
   }
 
   const serializer = new XMLSerializer();
@@ -197,4 +236,3 @@ export function exportToSvg(
   link.click();
   URL.revokeObjectURL(url);
 }
-

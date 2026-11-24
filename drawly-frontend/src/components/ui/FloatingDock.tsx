@@ -2,12 +2,14 @@
 
 import React from 'react';
 import {
+  Hand,
   MousePointer2,
-  Pencil,
   Square,
+  Diamond,
   Circle,
   MoveRight,
   Minus,
+  Pencil,
   Type,
   Eraser,
   Undo2,
@@ -41,50 +43,62 @@ export const FloatingDock: React.FC<FloatingDockProps> = ({
 }) => {
   const tools: ToolButtonConfig[] = [
     {
+      id: 'hand',
+      name: 'Hand (Pan)',
+      icon: <Hand className="w-5 h-5" />,
+      shortcut: 'H',
+    },
+    {
       id: 'select',
-      name: 'Select & Move',
+      name: 'Pilih & Geser',
       icon: <MousePointer2 className="w-5 h-5" />,
       shortcut: 'V',
     },
     {
-      id: 'pencil',
-      name: 'Freehand Pencil',
-      icon: <Pencil className="w-5 h-5" />,
-      shortcut: 'P',
-    },
-    {
       id: 'rectangle',
-      name: 'Rectangle',
+      name: 'Kotak (Persegi)',
       icon: <Square className="w-5 h-5" />,
       shortcut: 'R',
     },
     {
+      id: 'diamond',
+      name: 'Diamond (Belah Ketupat)',
+      icon: <Diamond className="w-5 h-5" />,
+      shortcut: 'D',
+    },
+    {
       id: 'circle',
-      name: 'Circle',
+      name: 'Lingkaran (Elips)',
       icon: <Circle className="w-5 h-5" />,
       shortcut: 'C',
     },
     {
       id: 'arrow',
-      name: 'Arrow',
+      name: 'Panah',
       icon: <MoveRight className="w-5 h-5" />,
       shortcut: 'A',
     },
     {
       id: 'line',
-      name: 'Line',
+      name: 'Garis',
       icon: <Minus className="w-5 h-5" />,
       shortcut: 'L',
     },
     {
+      id: 'pencil',
+      name: 'Pensil Sketsa',
+      icon: <Pencil className="w-5 h-5" />,
+      shortcut: 'P',
+    },
+    {
       id: 'text',
-      name: 'Text Note',
+      name: 'Teks Catatan',
       icon: <Type className="w-5 h-5" />,
       shortcut: 'T',
     },
     {
       id: 'eraser',
-      name: 'Eraser',
+      name: 'Penghapus',
       icon: <Eraser className="w-5 h-5" />,
       shortcut: 'E',
     },
@@ -146,4 +160,3 @@ export const FloatingDock: React.FC<FloatingDockProps> = ({
     </div>
   );
 };
-
